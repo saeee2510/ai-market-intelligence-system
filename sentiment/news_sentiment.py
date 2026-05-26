@@ -1,79 +1,42 @@
 import feedparser
 import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-from datetime import datetime
 import os
 
-OUTPUT_DIR = "data/sentiment"
-
+RSS_URL = "https://finance.yahoo.com/rss/topstories"
 analyzer = SentimentIntensityAnalyzer()
 
-
-def fetch_financial_news():
-    """
-    Fetch Yahoo Finance RSS news
-    """
-    rss_url = "https://finance.yahoo.com/rss/topstories"
-
-    feed = feedparser.parse(rss_url)
-
-    articles = []
-
-    for entry in feed.entries:
-        articles.append({
-            "title": entry.title,
-            "published": entry.published,
-            "link": entry.link
-        })
-
-    return pd.DataFrame(articles)
+OUT_DIR = "data/sentiment"
 
 
-def analyze_sentiment(df):
-    sentiments = []
+def fetch_news():
+    feed = feedparser.parse(RSS_URL)
 
-    for title in df["title"]:
-        score = analyzer.polarity_scores(title)
-
-        sentiments.append({
-            "negative": score["neg"],
-            "neutral": score["neu"],
-            "positive": score["pos"],
-            "compound": score["compound"]
-        })
-
-    sentiment_df = pd.DataFrame(sentiments)
-
-    return pd.concat([df, sentiment_df], axis=1)
+    return pd.DataFrame([{
+        "title": e.title,
+        "link": e.link
+    } for e in feed.entries])
 
 
-def save_results(df):
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+def analyze(df):
+    scores = []
 
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    for t in df["title"]:
+        s = analyzer.polarity_scores(t)
+        scores.append(s)
 
-    file_path = f"{OUTPUT_DIR}/news_sentiment_{date_str}.csv"
-
-    df.to_csv(file_path, index=False)
-
-    print(f"[SAVED] Sentiment results → {file_path}")
+    return pd.concat([df, pd.DataFrame(scores)], axis=1)
 
 
-def run_pipeline():
-    print("[FETCHING NEWS]")
+def run():
+    df = fetch_news()
+    df = analyze(df)
 
-    news_df = fetch_financial_news()
+    os.makedirs(OUT_DIR, exist_ok=True)
+    df.to_csv(f"{OUT_DIR}/news.csv", index=False)
 
-    print(news_df.head())
-
-    print("\n[ANALYZING SENTIMENT]")
-
-    sentiment_df = analyze_sentiment(news_df)
-
-    print(sentiment_df.head())
-
-    save_results(sentiment_df)
+    print(df.head())
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    run()
