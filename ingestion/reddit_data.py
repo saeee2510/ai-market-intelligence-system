@@ -1,18 +1,85 @@
+import os
 import praw
-from config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT
+import pandas as pd
+from dotenv import load_dotenv
+from processing.sentiment import get_sentiment
 
-def fetch_reddit():
+load_dotenv()
+
+
+def fetch_reddit(subreddit_name="wallstreetbets", limit=50):
+
+    # ----------------------------
+    # Reddit client
+    # ----------------------------
     reddit = praw.Reddit(
-        client_id=REDDIT_CLIENT_ID,
-        client_secret=REDDIT_CLIENT_SECRET,
-        user_agent=REDDIT_USER_AGENT
+        client_id=os.getenv("REDDIT_CLIENT_ID"),
+        client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
+        user_agent=os.getenv("REDDIT_USER_AGENT"),
     )
 
     posts = []
-    for post in reddit.subreddit("wallstreetbets").hot(limit=50):
-        posts.append(post.title)
 
-    return posts
+    # ----------------------------
+    # Fetch posts
+    # ----------------------------
+    for post in reddit.subreddit(subreddit_name).hot(limit=limit):
+        if post.title:
+            posts.append({
+                "text": post.title,
+                "timestamp": post.created_utc
+            })
 
+    df = pd.DataFrame(posts)
+
+    # ----------------------------
+    # Convert timestamp
+    # ----------------------------
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+
+    # ----------------------------
+    # Sentiment
+    # ----------------------------
+    df["sentiment"] = df["text"].apply(get_sentiment)
+
+    # ----------------------------
+    # Keep only ML-relevant columns
+    # ----------------------------
+    df = df[["timestamp", "sentiment"]]
+
+    # ----------------------------
+    # Hourly aggregation
+    # ----------------------------
+    df = (
+        df.groupby(pd.Grouper(key="timestamp", freq="1H"))
+        .mean()
+        .reset_index()
+    )
+
+    # ----------------------------
+    # Handle missing hours (VERY IMPORTANT)
+    # ----------------------------
+    df["sentiment"] = df["sentiment"].fillna(0.0)
+
+    # ----------------------------
+    # Rename for pipeline
+    # ----------------------------
+    df.rename(columns={"sentiment": "reddit_sentiment"}, inplace=True)
+
+    return df
+
+
+# ----------------------------
+# Local test
+# ----------------------------
 if __name__ == "__main__":
-    print(fetch_reddit()[:10])
+
+    df = fetch_reddit()
+
+    print("\n📊 REDDIT DATA PREVIEW:\n")
+    print(df.head())
+
+    print("\n📌 Columns:")
+    print(df.columns)
+
+    print("\n📊 Shape:", df.shape)
