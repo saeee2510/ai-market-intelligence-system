@@ -19,7 +19,7 @@ stock_df = load_stock_data(ticker)
 st.subheader("Price Chart")
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df["close"], name="Close"))
+fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df["Close"], name="Close"))
 fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df["sma_7"], name="SMA 7"))
 fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df["sma_30"], name="SMA 30"))
 
