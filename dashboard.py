@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from utils.data_loader import load_stock_data
 
 from sentiment.news_sentiment import fetch_news, analyze
 
@@ -11,8 +12,9 @@ ticker = st.sidebar.selectbox("Stock", ["AAPL", "MSFT", "GOOG"])
 
 
 # LOAD FEATURES (IMPORTANT FIX)
-stock_df = pd.read_csv(f"data/features/{ticker}_features.csv", index_col=0, parse_dates=True)
-
+# stock_df = pd.read_csv(f"data/features/{ticker}_features.csv", index_col=0, parse_dates=True)
+ticker = "AAPL"  # or Streamlit input later
+stock_df = load_stock_data(ticker)
 
 st.subheader("Price Chart")
 
