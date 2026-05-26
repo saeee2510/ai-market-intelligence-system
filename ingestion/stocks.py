@@ -7,7 +7,9 @@ from datetime import datetime
 # -----------------------------
 # CONFIG
 # -----------------------------
-API_KEY = "01FBFSSSQEMNI1CA"  # <-- put your key here
+
+
+API_KEY = os.getenv("ALPHAVANTAGE_API_KEY") # <-- put your key here
 DATA_DIR = "data/stocks"
 
 # Alpha Vantage allows ~5 requests/minute safely

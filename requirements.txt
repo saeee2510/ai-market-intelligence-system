@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+requests
+plotly
+feedparser
+vaderSentiment
+yfinance
+python-dotenv
+scikit-learn
