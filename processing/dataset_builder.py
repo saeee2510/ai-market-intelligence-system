@@ -1,119 +1,87 @@
 import pandas as pd
 
 
-def _normalize_timestamp_stock(df):
-    """
-    Stock timestamps → force UTC
-    """
+def _normalize_time(df):
     df = df.copy()
 
-    df["timestamp"] = pd.to_datetime(df["index"])
+    if "timestamp" not in df.columns:
+        raise ValueError(f"Missing timestamp column. Columns: {df.columns}")
 
-    # if timezone missing → assume NYSE time
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+    # force UTC consistency
     if df["timestamp"].dt.tz is None:
-        df["timestamp"] = df["timestamp"].dt.tz_localize("America/New_York")
+        df["timestamp"] = df["timestamp"].dt.tz_localize("UTC")
+    else:
+        df["timestamp"] = df["timestamp"].dt.tz_convert("UTC")
 
-    # convert to UTC (standard for ML pipelines)
-    df["timestamp"] = df["timestamp"].dt.tz_convert("UTC")
-
-    return df
-
-
-def _normalize_timestamp_news(df):
-    """
-    News timestamps → UTC
-    """
-    df = df.copy()
-
-    df["timestamp"] = pd.to_datetime(
-        df["publishedAt"],
-        errors="coerce",
-        utc=True
-    )
-
-    df = df.dropna(subset=["timestamp"])
-    return df
-
-
-def _aggregate_news(df):
-    """
-    Hourly sentiment aggregation
-    """
-    df = df.copy()
-
-    df = df.groupby(df["timestamp"].dt.floor("h"))["sentiment"].mean()
-    df = df.reset_index()
-    df.columns = ["timestamp", "news_sentiment"]
-
-    return df
-
-
-def _aggregate_reddit(df):
-    """
-    Hourly sentiment aggregation
-    (currently simplified using current timestamp fallback)
-    """
-    df = df.copy()
-
-    df["timestamp"] = pd.to_datetime("now", utc=True)
-
-    df = df.groupby(df["timestamp"].dt.floor("h"))["sentiment"].mean()
-    df = df.reset_index()
-    df.columns = ["timestamp", "reddit_sentiment"]
+    df["timestamp"] = df["timestamp"].dt.tz_localize(None)
 
     return df
 
 
 def build_dataset(stock_df, news_df=None, reddit_df=None):
-    """
-    FINAL ML-READY DATASET BUILDER
-    """
 
-    # =========================
-    # STOCK BASE
-    # =========================
-    stock_df = _normalize_timestamp_stock(stock_df)
+    # -----------------------
+    # STOCK
+    # -----------------------
+    stock_df = _normalize_time(stock_df)
 
-    base = stock_df[[
-        "timestamp",
-        "Close",
-        "return",
-        "volatility"
-    ]].copy()
+    required_stock_cols = ["timestamp", "Close", "return", "volatility"]
+    stock_df = stock_df[[c for c in required_stock_cols if c in stock_df.columns]]
 
-    # =========================
-    # NEWS FUSION
-    # =========================
-    if news_df is not None and "sentiment" in news_df.columns:
-        news_df = _normalize_timestamp_news(news_df)
-        news_agg = _aggregate_news(news_df)
+    # -----------------------
+    # NEWS
+    # -----------------------
+    if news_df is not None:
+        news_df = _normalize_time(news_df)
 
-        base = base.merge(news_agg, on="timestamp", how="left")
+        if "sentiment" not in news_df.columns:
+            news_df["sentiment"] = 0.0
 
-    # =========================
-    # REDDIT FUSION
-    # =========================
-    if reddit_df is not None and "sentiment" in reddit_df.columns:
-        reddit_df = reddit_df.copy()
+        news_df = news_df[["timestamp", "sentiment"]]
+        news_df = news_df.groupby("timestamp").mean().reset_index()
+        news_df.rename(columns={"sentiment": "news_sentiment"}, inplace=True)
 
-        reddit_df["timestamp"] = pd.to_datetime("now", utc=True)
+    # -----------------------
+    # REDDIT
+    # -----------------------
+    if reddit_df is not None:
+        reddit_df = _normalize_time(reddit_df)
 
-        reddit_agg = reddit_df.groupby(
-            reddit_df["timestamp"].dt.floor("h")
-        )["sentiment"].mean().reset_index()
+        if "reddit_sentiment" not in reddit_df.columns:
+            reddit_df["reddit_sentiment"] = 0.0
 
-        reddit_agg.columns = ["timestamp", "reddit_sentiment"]
+        reddit_df = reddit_df[["timestamp", "reddit_sentiment"]]
+        reddit_df = reddit_df.groupby("timestamp").mean().reset_index()
 
-        base = base.merge(reddit_agg, on="timestamp", how="left")
+    # -----------------------
+    # MERGE
+    # -----------------------
+    df = stock_df.copy()
 
-    # =========================
-    # CLEAN FINAL DATASET
-    # =========================
-    base = base.sort_values("timestamp")
-    base = base.fillna(0)
+    if news_df is not None:
+        df = df.merge(news_df, on="timestamp", how="left")
 
-    return base
+    if reddit_df is not None:
+        df = df.merge(reddit_df, on="timestamp", how="left")
+
+    # -----------------------
+    # FILL MISSING
+    # -----------------------
+    if "news_sentiment" in df.columns:
+        df["news_sentiment"] = df["news_sentiment"].fillna(0.0)
+
+    if "reddit_sentiment" in df.columns:
+        df["reddit_sentiment"] = df["reddit_sentiment"].fillna(0.0)
+
+    # -----------------------
+    # SORT
+    # -----------------------
+    df = df.sort_values("timestamp").reset_index(drop=True)
+
+    return df
 
 
 if __name__ == "__main__":
-    print("Dataset builder ready ✔")
+    print("Dataset builder ready.")
