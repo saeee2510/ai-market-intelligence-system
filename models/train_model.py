@@ -11,6 +11,7 @@ from ingestion.reddit_data import fetch_reddit
 
 from processing.dataset_builder import build_dataset
 from processing.labeling import create_labels
+from processing.feature_engineering import add_time_series_features
 
 
 # -----------------------------------
@@ -26,6 +27,7 @@ reddit_df = fetch_reddit()
 # -----------------------------------
 
 df = build_dataset(stock_df, news_df, reddit_df)
+df = add_time_series_features(df)
 
 # -----------------------------------
 # CREATE LABELS
@@ -41,7 +43,22 @@ FEATURES = [
     "return",
     "volatility",
     "news_sentiment",
-    "reddit_sentiment"
+    "reddit_sentiment",
+
+    "return_lag1",
+    "return_lag2",
+    "volatility_lag1",
+
+    "reddit_lag1",
+    "news_lag1",
+
+    "return_roll_mean_3",
+    "return_roll_std_3",
+
+    "sentiment_roll_mean_3",
+
+    "price_change_1",
+    "price_change_3"
 ]
 
 TARGET = "label"
