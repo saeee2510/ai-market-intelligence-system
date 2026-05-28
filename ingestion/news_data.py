@@ -39,7 +39,7 @@ def fetch_news(query="Apple", page_size=50):
     # -----------------------------
     # FIX TIMESTAMP
     # -----------------------------
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(None)
 
     # -----------------------------
     # SENTIMENT

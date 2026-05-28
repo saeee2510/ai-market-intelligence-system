@@ -1,171 +1,81 @@
-import joblib
-import matplotlib.pyplot as plt
 import pandas as pd
-
-from xgboost import XGBClassifier
-
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-)
-
+import xgboost as xgb
 from sklearn.model_selection import train_test_split
-
-from ingestion.stock_data import fetch_stock_data
-from ingestion.news_data import fetch_news
-from ingestion.reddit_data import fetch_reddit
-
-from processing.dataset_builder import build_dataset
-from processing.labeling import create_labels
-from processing.feature_engineering import add_time_series_features
+from sklearn.metrics import accuracy_score, classification_report
 
 
-# -----------------------------------
-# LOAD DATA
-# -----------------------------------
+def train_model(df):
 
-stock_df = fetch_stock_data("MSFT")
-news_df = fetch_news()
-reddit_df = fetch_reddit()
+    df = df.copy()
 
-# -----------------------------------
-# BUILD DATASET
-# -----------------------------------
+    # --------------------------------------------------
+    # STEP 1 — CLEAN DATA
+    # --------------------------------------------------
+    df = df.dropna().reset_index(drop=True)
 
-df = build_dataset(stock_df, news_df, reddit_df)
-df = add_time_series_features(df)
+    # --------------------------------------------------
+    # STEP 2 — REGIME FILTER (DO THIS FIRST)
+    # --------------------------------------------------
+    if "vol_regime" in df.columns:
+        df = df[df["vol_regime"] > df["vol_regime"].quantile(0.3)]
+        df = df.dropna().reset_index(drop=True)
 
-# -----------------------------------
-# CREATE LABELS
-# -----------------------------------
+    # --------------------------------------------------
+    # STEP 3 — LABEL DISTRIBUTION CHECK
+    # --------------------------------------------------
+    print("\n📊 Label distribution (AFTER filtering):")
+    print(df["label"].value_counts(normalize=True))
 
-df = create_labels(df)
+    # --------------------------------------------------
+    # STEP 4 — SPLIT FEATURES / TARGET
+    # --------------------------------------------------
+    drop_cols = ["label", "future_return", "timestamp"]
 
-# -----------------------------------
-# FEATURES
-# -----------------------------------
+    X = df.drop(columns=[col for col in drop_cols if col in df.columns])
+    y = df["label"]
 
-FEATURES = [
-    "return",
-    "volatility",
-    "news_sentiment",
-    "reddit_sentiment",
+    # --------------------------------------------------
+    # STEP 5 — TRAIN / TEST SPLIT (TIME SERIES SAFE)
+    # --------------------------------------------------
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        shuffle=False
+    )
 
-    "return_lag1",
-    "return_lag2",
-    "volatility_lag1",
+    # --------------------------------------------------
+    # STEP 6 — MODEL
+    # --------------------------------------------------
+    model = xgb.XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        eval_metric="logloss",
+        random_state=42
+    )
 
-    "reddit_lag1",
-    "news_lag1",
+    # --------------------------------------------------
+    # STEP 7 — TRAIN
+    # --------------------------------------------------
+    print("\n🤖 Training XGBoost model...")
+    model.fit(X_train, y_train)
 
-    "return_roll_mean_3",
-    "return_roll_std_3",
+    # --------------------------------------------------
+    # STEP 8 — PREDICT
+    # --------------------------------------------------
+    y_pred = model.predict(X_test)
 
-    "sentiment_roll_mean_3",
+    # --------------------------------------------------
+    # STEP 9 — EVALUATION
+    # --------------------------------------------------
+    acc = accuracy_score(y_test, y_pred)
 
-    "price_change_1",
-    "price_change_3"
-]
+    print("\n📊 MODEL ACCURACY:", acc)
 
-TARGET = "label"
+    print("\n📋 CLASSIFICATION REPORT:\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
 
-X = df[FEATURES]
-y = df[TARGET]
-
-# -----------------------------------
-# TRAIN TEST SPLIT
-# -----------------------------------
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42,
-    shuffle=False
-)
-
-# -----------------------------------
-# XGBOOST MODEL
-# -----------------------------------
-
-model = XGBClassifier(
-    n_estimators=100,
-    max_depth=4,
-    learning_rate=0.1,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    random_state=42,
-    eval_metric="logloss"
-)
-
-model.fit(X_train, y_train)
-
-# -----------------------------------
-# PREDICTIONS
-# -----------------------------------
-
-predictions = model.predict(X_test)
-
-probabilities = model.predict_proba(X_test)
-
-# -----------------------------------
-# EVALUATION
-# -----------------------------------
-
-accuracy = accuracy_score(y_test, predictions)
-
-print("\n📊 XGBOOST ACCURACY:")
-print(round(accuracy, 4))
-
-print("\n📋 CLASSIFICATION REPORT:\n")
-print(classification_report(y_test, predictions))
-
-print("\n🧠 CONFUSION MATRIX:\n")
-print(confusion_matrix(y_test, predictions))
-
-# -----------------------------------
-# FEATURE IMPORTANCE
-# -----------------------------------
-
-importance_df = pd.DataFrame({
-    "feature": FEATURES,
-    "importance": model.feature_importances_
-})
-
-importance_df = importance_df.sort_values(
-    by="importance",
-    ascending=False
-)
-
-print("\n🔥 FEATURE IMPORTANCE:\n")
-print(importance_df)
-
-# -----------------------------------
-# PLOT FEATURE IMPORTANCE
-# -----------------------------------
-
-plt.figure(figsize=(8, 5))
-
-plt.bar(
-    importance_df["feature"],
-    importance_df["importance"]
-)
-
-plt.xlabel("Feature")
-plt.ylabel("Importance")
-plt.title("XGBoost Feature Importance")
-
-plt.tight_layout()
-
-plt.savefig("feature_importance.png")
-
-print("\n✅ Saved feature importance chart")
-
-# -----------------------------------
-# SAVE MODEL
-# -----------------------------------
-
-joblib.dump(model, "models/xgboost_model.pkl")
-
-print("\n✅ Model saved to models/xgboost_model.pkl")
+    return model, X_test, y_test

@@ -1,17 +1,19 @@
 import os
 import praw
 import pandas as pd
+import numpy as np
+
 from dotenv import load_dotenv
 from processing.sentiment import get_sentiment
 
 load_dotenv()
 
 
-def fetch_reddit(subreddit_name="wallstreetbets", limit=50):
+def fetch_reddit(
+    subreddit_name="wallstreetbets",
+    limit=200   # increased for better signal
+):
 
-    # ----------------------------
-    # Reddit client
-    # ----------------------------
     reddit = praw.Reddit(
         client_id=os.getenv("REDDIT_CLIENT_ID"),
         client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
@@ -20,66 +22,83 @@ def fetch_reddit(subreddit_name="wallstreetbets", limit=50):
 
     posts = []
 
-    # ----------------------------
-    # Fetch posts
-    # ----------------------------
     for post in reddit.subreddit(subreddit_name).hot(limit=limit):
-        if post.title:
-            posts.append({
-                "text": post.title,
-                "timestamp": post.created_utc
-            })
+
+        if not post.title:
+            continue
+
+        sentiment = get_sentiment(post.title)
+
+        # ------------------------------------
+        # STRONGER ENGAGEMENT WEIGHTING
+        # ------------------------------------
+        engagement = np.log1p(post.score) + np.log1p(post.num_comments)
+
+        weighted_sentiment = sentiment * engagement
+
+        posts.append({
+            "text": post.title,
+            "timestamp": post.created_utc,
+            "score": post.score,
+            "comments": post.num_comments,
+            "sentiment": sentiment,
+            "reddit_sentiment": weighted_sentiment
+        })
 
     df = pd.DataFrame(posts)
 
-    # ----------------------------
-    # Convert timestamp
-    # ----------------------------
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+    if df.empty:
+        return pd.DataFrame(columns=["timestamp", "reddit_sentiment"])
 
-    # ----------------------------
-    # Sentiment
-    # ----------------------------
-    df["sentiment"] = df["text"].apply(get_sentiment)
+    # ------------------------------------
+    # TIMESTAMP CLEANING
+    # ------------------------------------
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(None)
 
-    # ----------------------------
-    # Keep only ML-relevant columns
-    # ----------------------------
-    df = df[["timestamp", "sentiment"]]
+    # ------------------------------------
+    # ADD TIME FEATURES BEFORE AGGREGATION
+    # ------------------------------------
+    df["hour"] = df["timestamp"].dt.floor("H")
 
-    # ----------------------------
-    # Hourly aggregation
-    # ----------------------------
-    df = (
-        df.groupby(pd.Grouper(key="timestamp", freq="1H"))
-        .mean()
-        .reset_index()
-    )
+    # ------------------------------------
+    # AGGREGATE PROPERLY (NOT SIMPLE MEAN ONLY)
+    # ------------------------------------
+    df = df.groupby("hour").agg({
+        "reddit_sentiment": ["mean", "sum", "std"],
+        "sentiment": "mean",
+        "score": "sum",
+        "comments": "sum"
+    })
 
-    # ----------------------------
-    # Handle missing hours (VERY IMPORTANT)
-    # ----------------------------
-    df["sentiment"] = df["sentiment"].fillna(0.0)
+    # flatten columns
+    df.columns = [
+        "reddit_sent_mean",
+        "reddit_sent_sum",
+        "reddit_sent_std",
+        "sentiment_mean",
+        "score_sum",
+        "comments_sum"
+    ]
 
-    # ----------------------------
-    # Rename for pipeline
-    # ----------------------------
-    df.rename(columns={"sentiment": "reddit_sentiment"}, inplace=True)
+    df = df.reset_index().rename(columns={"hour": "timestamp"})
+
+    # ------------------------------------
+    # FILL MISSING VALUES
+    # ------------------------------------
+    df = df.fillna(0)
 
     return df
 
 
-# ----------------------------
-# Local test
-# ----------------------------
 if __name__ == "__main__":
 
     df = fetch_reddit()
 
-    print("\n📊 REDDIT DATA PREVIEW:\n")
+    print("\n REDDIT DATA PREVIEW:\n")
     print(df.head())
 
-    print("\n📌 Columns:")
+    print("\n Columns:")
     print(df.columns)
 
-    print("\n📊 Shape:", df.shape)
+    print("\n Shape:")
+    print(df.shape)

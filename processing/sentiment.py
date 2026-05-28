@@ -1,6 +1,5 @@
 from transformers import pipeline
 
-# ⚠️ load once (important for performance)
 sentiment_model = pipeline(
     "sentiment-analysis",
     model="ProsusAI/finbert"
@@ -8,17 +7,14 @@ sentiment_model = pipeline(
 
 
 def get_sentiment(text):
-    if not text:
-        return 0.0
-
     result = sentiment_model(str(text))[0]
 
-    label = result["label"]
+    label = result["label"].lower()
     score = result["score"]
 
-    if label == "positive":
+    if "positive" in label:
         return score
-    elif label == "negative":
+    elif "negative" in label:
         return -score
     else:
         return 0.0
