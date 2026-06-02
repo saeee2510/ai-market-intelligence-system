@@ -34,19 +34,21 @@ def run_pipeline():
     try:
         reddit_df = fetch_reddit()
     except:
-        print("⚠️ Reddit failed, using empty df")
+        print(" Reddit failed, using empty df")
         reddit_df = pd.DataFrame(columns=["timestamp", "reddit_sentiment"])
 
     try:
         news_df = fetch_news()
     except:
-        print("⚠️ News failed, using empty df")
+        print(" News failed, using empty df")
         news_df = pd.DataFrame(columns=["timestamp", "news_sentiment"])
+
+
 
     # -----------------------------
     # STEP 3: MERGE DATA
     # -----------------------------
-    print("\n🔗 Building dataset...")
+    print("\n Building dataset...")
 
     df = stock_df.copy()
 
@@ -61,16 +63,16 @@ def run_pipeline():
     # -----------------------------
     # STEP 4: FEATURE ENGINEERING
     # -----------------------------
-    print("\n⚙️ Feature engineering...")
+    print("\n Feature engineering...")
     df = add_features(df)
 
     # -----------------------------
     # STEP 5: LABEL CREATION
     # -----------------------------
-    print("\n🏷️ Creating labels...")
+    print("\n Creating labels...")
     df = create_labels(df)
 
-    print("\n📊 Final dataset shape:", df.shape)
+    print("\n Final dataset shape:", df.shape)
     print(df.head())
 
     # -----------------------------
@@ -80,7 +82,7 @@ def run_pipeline():
 
     model, X_test, y_test = train_model(df)
 
-    print("\n✅ PIPELINE COMPLETE")
+    print("\n PIPELINE COMPLETE")
 
     return model
 
