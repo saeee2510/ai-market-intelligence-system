@@ -1,91 +1,98 @@
 import pandas as pd
+import sys
+import os
 
-# -----------------------------
-# INGESTION
-# -----------------------------
+# make imports stable
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ingestion.stock_data import fetch_stock_data
 from ingestion.reddit_data import fetch_reddit
-from ingestion.news_data import fetch_news
 
-# -----------------------------
-# PROCESSING
-# -----------------------------
 from processing.feature_engineering import add_features
-from processing.labeling import create_labels
+from processing.sentiment import get_sentiment
+from processing.create_labels import create_labels
+
+from ml.train_xgboost import train_model
+
 
 # -----------------------------
-# MODEL
+# STEP 1 — LOAD DATA
 # -----------------------------
-from models.train_xgboost import train_model
-
-
-def run_pipeline():
-
+def load_data():
     print("\n📦 Loading data...")
 
-    # -----------------------------
-    # STEP 1: STOCK DATA
-    # -----------------------------
-    stock_df = fetch_stock_data("MSFT")
+    stock_df = fetch_stock_data("AAPL")
+    reddit_posts = fetch_reddit()
 
-    # -----------------------------
-    # STEP 2: NEWS + REDDIT (OPTIONAL SAFE LOAD)
-    # -----------------------------
-    try:
-        reddit_df = fetch_reddit()
-    except:
-        print(" Reddit failed, using empty df")
-        reddit_df = pd.DataFrame(columns=["timestamp", "reddit_sentiment"])
+    # sentiment
+    reddit_sentiment = get_sentiment(reddit_posts)
+    stock_df["reddit_sentiment"] = reddit_sentiment
 
-    try:
-        news_df = fetch_news()
-    except:
-        print(" News failed, using empty df")
-        news_df = pd.DataFrame(columns=["timestamp", "news_sentiment"])
+    return stock_df
 
 
+# -----------------------------
+# STEP 2 — BUILD DATASET
+# -----------------------------
+def build_dataset(df):
+    print("\n🔗 Building dataset...")
 
-    # -----------------------------
-    # STEP 3: MERGE DATA
-    # -----------------------------
-    print("\n Building dataset...")
-
-    df = stock_df.copy()
-
-    if "timestamp" in reddit_df.columns:
-        df = df.merge(reddit_df, on="timestamp", how="left")
-
-    if "timestamp" in news_df.columns:
-        df = df.merge(news_df, on="timestamp", how="left")
-
-    df = df.fillna(0)
-
-    # -----------------------------
-    # STEP 4: FEATURE ENGINEERING
-    # -----------------------------
-    print("\n Feature engineering...")
     df = add_features(df)
+    return df
 
-    # -----------------------------
-    # STEP 5: LABEL CREATION
-    # -----------------------------
+
+# -----------------------------
+# STEP 3 — FEATURE CLEANING
+# -----------------------------
+def feature_engineering(df):
+    print("\n Feature engineering...")
+
+    df = df.dropna().reset_index(drop=True)
+    return df
+
+
+# -----------------------------
+# PIPELINE
+# -----------------------------
+def run_pipeline():
+
+    # 1. load data
+    df = load_data()
+
+    # 2. features
+    df = build_dataset(df)
+
+    # 3. clean
+    df = feature_engineering(df)
+
+    # --------------------------------------------------
+    # 🔥 CRITICAL FIX — CREATE LABELS (YOU WERE MISSING THIS)
+    # --------------------------------------------------
     print("\n Creating labels...")
     df = create_labels(df)
 
-    print("\n Final dataset shape:", df.shape)
-    print(df.head())
+    # sanity check (VERY IMPORTANT)
+    print("\n Label distribution:")
+    print(df["label"].value_counts(normalize=True))
 
-    # -----------------------------
-    # STEP 6: TRAIN MODEL
-    # -----------------------------
-    print("\n🤖 Training model...")
+    # --------------------------------------------------
+    # save dataset
+    # --------------------------------------------------
+    df.to_csv("data/final_dataset.csv", index=False)
+    print("\n Saved final_dataset.csv")
+
+    # --------------------------------------------------
+    # train model
+    # --------------------------------------------------
+    print("\n Training model...")
 
     model, X_test, y_test = train_model(df)
 
     print("\n PIPELINE COMPLETE")
 
-    return model
 
-
+# -----------------------------
+# RUN
+# -----------------------------
 if __name__ == "__main__":
     run_pipeline()

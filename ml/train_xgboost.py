@@ -19,23 +19,23 @@ def train_model(df):
     df = df.copy()
     df = df.dropna().reset_index(drop=True)
 
-    # -----------------------------------
-    # LABEL DISTRIBUTION
-    # -----------------------------------
+    # =========================================================
+    # 📊 LABEL DISTRIBUTION
+    # =========================================================
     print("\n Label distribution:")
     print(df["label"].value_counts(normalize=True))
 
-    # -----------------------------------
+    # =========================================================
     # FEATURES / TARGET
-    # -----------------------------------
+    # =========================================================
     drop_cols = ["label", "future_return", "timestamp"]
 
     X = df.drop(columns=[c for c in drop_cols if c in df.columns])
     y = df["label"]
 
-    # -----------------------------------
+    # =========================================================
     # TRAIN / TEST SPLIT (TIME SERIES SAFE)
-    # -----------------------------------
+    # =========================================================
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -44,7 +44,7 @@ def train_model(df):
     )
 
     # =========================================================
-    #  FIX CLASS IMBALANCE (IMPORTANT)
+    # CLASS IMBALANCE HANDLING
     # =========================================================
     scale_pos_weight = len(y_train[y_train == 0]) / max(len(y_train[y_train == 1]), 1)
 
@@ -66,13 +66,13 @@ def train_model(df):
     model.fit(X_train, y_train)
 
     # =========================================================
-    #  PREDICTIONS
+    # PREDICTIONS
     # =========================================================
     y_pred = model.predict(X_test)
     proba = model.predict_proba(X_test)[:, 1]
 
     # =========================================================
-    #  EVALUATION (TRADING METRICS)
+    # 📊 MODEL EVALUATION
     # =========================================================
     print("\n MODEL RESULTS")
     print("Accuracy:", accuracy_score(y_test, y_pred))
@@ -83,38 +83,60 @@ def train_model(df):
     print(classification_report(y_test, y_pred, zero_division=0))
 
     # =========================================================
-    #  SIGNAL GENERATION (RELAXED THRESHOLDS)
+    # 🚦 SIGNAL GENERATION
     # =========================================================
     signals = []
 
     for p in proba:
         if p > 0.65:
-            signals.append(1)    # BUY
+            signals.append(1)     # BUY
         elif p < 0.35:
-            signals.append(-1)   # SELL
+            signals.append(-1)    # SELL
         else:
-            signals.append(0)    # HOLD
+            signals.append(0)     # HOLD
+
+    signals = np.array(signals)
 
     # =========================================================
-    #  SIGNAL DISTRIBUTION CHECK
+    #  SIGNAL DISTRIBUTION
     # =========================================================
     print("\n Signal distribution:")
     print(pd.Series(signals).value_counts(normalize=True))
 
     # =========================================================
-    #  BACKTEST (FIXED SIMPLE STRATEGY)
+    # 💰 BACKTEST (CORRECT VERSION)
     # =========================================================
-    df_test = df.iloc[-len(y_test):].copy()
+    df_test = df.iloc[-len(y_test):].copy().reset_index(drop=True)
 
     df_test["signal"] = signals
 
-    df_test["returns"] = df_test["Close"].pct_change()
+    # forward returns (correct alignment)
+    df_test["returns"] = df_test["Close"].pct_change().shift(-1)
 
-    df_test["strategy_returns"] = df_test["signal"].shift(1) * df_test["returns"]
+    # strategy returns
+    df_test["strategy_returns"] = df_test["signal"] * df_test["returns"]
 
+    df_test = df_test.dropna()
+
+    # performance metrics
     total_return = df_test["strategy_returns"].sum()
 
+    sharpe = (
+        df_test["strategy_returns"].mean()
+        / (df_test["strategy_returns"].std() + 1e-9)
+    ) * np.sqrt(252)
+
+    win_rate = (df_test["strategy_returns"] > 0).mean()
+
+    trade_count = (df_test["signal"] != 0).sum()
+
+    # =========================================================
+    #  BACKTEST RESULTS
+    # =========================================================
     print("\n BACKTEST RESULTS")
-    print("Strategy Return:", total_return)
+    print("Total Return:", round(total_return, 4))
+    print("Sharpe Ratio:", round(sharpe, 4))
+    print("Win Rate:", round(win_rate, 4))
+    print("Trades Executed:", trade_count)
 
     return model, X_test, y_test
