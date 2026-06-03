@@ -1,70 +1,42 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-import numpy as np
+import pandas as pd
 
 from api.model_loader import load_model
+from ingestion.stock_data import fetch_stock_data
+from processing.feature_engineering import add_features
 
-app = FastAPI(title="AI Market Intelligence API")
+app = FastAPI()
 
 model = load_model()
 
 
-# =====================================================
-# INPUT SCHEMA
-# =====================================================
-class Features(BaseModel):
-    features: list  # list of numeric features
+@app.get("/")
+def home():
+    return {"message": "AI Market Intelligence API Running"}
 
 
-# =====================================================
-# 1. PREDICT SIGNAL
-# =====================================================
-@app.post("/predict")
-def predict(data: Features):
+@app.get("/predict/{ticker}")
+def predict(ticker: str):
 
-    X = np.array(data.features).reshape(1, -1)
+    df = fetch_stock_data(ticker)
+    df = add_features(df)
+    df = df.dropna()
 
-    pred = model.predict(X)[0]
+    X = df.drop(columns=["label"], errors="ignore")
 
-    return {
-        "signal": int(pred)
-    }
+    proba = model.predict_proba(X)[:, 1]
 
+    latest = proba[-1]
 
-# =====================================================
-# 2. PROBABILITY (CONFIDENCE)
-# =====================================================
-@app.post("/proba")
-def proba(data: Features):
-
-    X = np.array(data.features).reshape(1, -1)
-
-    prob = model.predict_proba(X)[0][1]
-
-    return {
-        "prob_up": float(prob)
-    }
-
-
-# =====================================================
-# 3. ANALYSIS (SIMPLE EXPLANATION LAYER)
-# =====================================================
-@app.post("/analysis")
-def analysis(data: Features):
-
-    X = np.array(data.features).reshape(1, -1)
-
-    prob = model.predict_proba(X)[0][1]
-
-    if prob > 0.65:
-        decision = "BUY"
-    elif prob < 0.35:
-        decision = "SELL"
+    if latest > 0.70:
+        signal = "BUY"
+    elif latest < 0.30:
+        signal = "SELL"
     else:
-        decision = "HOLD"
+        signal = "HOLD"
 
     return {
-        "probability": float(prob),
-        "decision": decision,
-        "reason": "Based on model confidence thresholding"
+        "ticker": ticker,
+        "signal": signal,
+        "confidence": float(latest)
     }

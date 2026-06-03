@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import xgboost as xgb
+import joblib
+import os
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, precision_score, recall_score
@@ -129,6 +131,16 @@ def train_model(df):
     print("Max Drawdown:", round(max_drawdown, 4))
     print("Win Rate:", round(win_rate, 4))
     print("Trades Executed:", int(trades))
+
+    # =====================================================
+    # SAVE MODEL
+    # =====================================================
+
+    os.makedirs("ml/models", exist_ok=True)
+
+    joblib.dump(model, "ml/models/xgboost_model.pkl")
+
+    print("\n💾 Model saved to ml/models/xgboost_model.pkl")
 
     # =====================================================
     # RETURN
