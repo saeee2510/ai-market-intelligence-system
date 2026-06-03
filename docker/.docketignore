@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+*.pkl
+ml/models/*
+data/
+.env
+.git
